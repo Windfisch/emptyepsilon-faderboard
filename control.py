@@ -17,7 +17,7 @@ def query(ship_id, queries):
 	#print(url)
 	r = requests.get(url)
 	if r.status_code < 200 or r.status_code >= 300:
-		raise ConnectionError("querying failed")
+		raise ConnectionError("querying failed %i" %r.status_code)
 	
 	response = json.loads(r.text)
 
@@ -31,12 +31,13 @@ def query(ship_id, queries):
 def enumerate_ships():
 	i = 1
 	callsigns = []
-	while True:
+	for i in range(32):
 		try:
 			callsigns.append(query(i, "getCallSign()"))
 			i += 1
 		except ValueError:
-			break
+			callsigns.append("")
+			#break
 	return callsigns
 
 
@@ -66,7 +67,8 @@ else:
 MAX_COOLANT = query(ship_id, 'getMaxCoolant()')
 print("Your ship has %4.1f coolant available" % MAX_COOLANT)
 
-set_requests = ['commandSetSystemPowerRequest("beamweapons", 2.0)']
+#set_requests = ['commandSetSystemPowerRequest("beamweapons", 2.0)']
+set_requests = []
 
 last_sent_to_faders = [0.0] * 17
 
@@ -79,8 +81,9 @@ while True:
 	#systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "warp", "jumpdrive", "frontshield", "rearshield"]
 	systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "jumpdrive", "frontshield", "rearshield"]
 
-	result = query(ship_id, ['getSystemPower("%s")' % s for s in systems] + ['getSystemCoolant("%s")' % s for s in systems] + set_requests)
+	result = query(ship_id, ['getSystemPower("%s")' % s for s in systems] + ['getSystemCoolant("%s")' % s for s in systems] + ['getMaxCoolant()'] + set_requests)
 	set_requests = []
+	MAX_COOLANT = result[2*len(systems)]
 
 	power_normalized = [p / MAX_POWER for p in result[0:len(systems)]]
 	coolant_normalized = [c / MAX_COOLANT for c in result[len(systems):2*len(systems)]]
