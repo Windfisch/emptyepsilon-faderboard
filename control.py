@@ -9,11 +9,11 @@ SERVER="http://localhost:8080"
 def interleave(list1, list2):
 	return [val for pair in zip(list1, list2) for val in pair]
 
-def query(ship_id, queries):
+def query(queries):
 	if isinstance(queries, str):
-		return query(ship_id, [queries])[0]
+		return query([queries])[0]
 
-	url = SERVER+"/get.lua?_OBJECT_=getPlayerShip(%d)" % ship_id + "".join(["&result%d=%s" % (i, q) for (i, q) in enumerate(queries)])
+	url = SERVER+"/get.lua?" + "".join(["&result%d=%s" % (i, q) for (i, q) in enumerate(queries)])
 	#print(url)
 	r = requests.get(url)
 	if r.status_code < 200 or r.status_code >= 300:
@@ -27,44 +27,20 @@ def query(ship_id, queries):
 
 	return tuple([response['result%d' % i] for i in range(0, len(queries))])
 
-
-def enumerate_ships():
-	i = 1
-	callsigns = []
-	for i in range(32):
-		try:
-			callsigns.append(query(i, "getCallSign()"))
-			i += 1
-		except ValueError:
-			callsigns.append("")
-			#break
-	return callsigns
-
-
-if len(sys.argv) >= 2:
-	SERVER = sys.argv[1]
-	if not SERVER.startswith("http"):
-		print("Prepending http:// to your server")
-		SERVER = "http://"+SERVER
-else:
-	print("Usage: %s SERVER:PORT [CALLSIGN]")
-
-callsigns = enumerate_ships()
+try:
+	callsign = query("getCallSign()")	# only works, when you have a ship selected
+except requests.exceptions.ConnectionError as e:
+	print(e)
+	print("Start EmptyEpsilon with httpserver=8080")
+	exit(1)
+except KeyError as e:
+	print("ERROR: no ship available.")
+	exit(1)
+print("Ship: %s" % callsign)
 
 MAX_POWER = 3.0
 
-if len(sys.argv) >= 3:
-	try:
-		ship_id = callsigns.index(sys.argv[2])
-	except:
-		print("Error: No such callsign. Available callsigns: %s" % callsigns)
-		exit(1)
-	print("Ship id: %d" % ship_id)
-else:
-	print("Available callsigns: %s" % callsigns)
-	exit(0)
-
-MAX_COOLANT = query(ship_id, 'getMaxCoolant()')
+MAX_COOLANT = query('getMaxCoolant()')
 print("Your ship has %4.1f coolant available" % MAX_COOLANT)
 
 #set_requests = ['commandSetSystemPowerRequest("beamweapons", 2.0)']
@@ -81,7 +57,7 @@ while True:
 	#systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "warp", "jumpdrive", "frontshield", "rearshield"]
 	systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "jumpdrive", "frontshield", "rearshield"]
 
-	result = query(ship_id, ['getSystemPower("%s")' % s for s in systems] + ['getSystemCoolant("%s")' % s for s in systems] + ['getMaxCoolant()'] + set_requests)
+	result = query(['getSystemPower("%s")' % s for s in systems] + ['getSystemCoolant("%s")' % s for s in systems] + ['getMaxCoolant()'] + set_requests)
 	set_requests = []
 	MAX_COOLANT = result[2*len(systems)]
 
