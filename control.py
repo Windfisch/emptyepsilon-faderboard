@@ -53,9 +53,17 @@ midi_in = mido.open_input('Faderboard MIDI 1')
 
 input_lsb = [0] * 32
 
+systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "jumpdrive", "frontshield", "rearshield"]
+send_to_game_power = [MAX_POWER/len(s) for s in systems]
+send_to_game_coolant = [MAX_COOLANT/len(s) for s in systems]
+
+def limit(values, maxval):
+	total = sum(values)
+	if total < maxval: total = maxval
+	return [v / total * maxval for v in values]
+
 while True:
 	#systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "warp", "jumpdrive", "frontshield", "rearshield"]
-	systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "jumpdrive", "frontshield", "rearshield"]
 
 	result = query(['getSystemPower("%s")' % s for s in systems] + ['getSystemCoolant("%s")' % s for s in systems] + ['getMaxCoolant()'] + set_requests)
 	set_requests = []
@@ -92,6 +100,10 @@ while True:
 				system_id = int(fader_id / 2)
 
 				if fader_id % 2 == 0: # power
-					set_requests.append('commandSetSystemPowerRequest("%s", %f)' % (systems[system_id], (msg.value * 128 + input_lsb[msg.control-32]) / 16384.0 * MAX_POWER))
+					send_to_game_power[system_id] = (msg.value * 128 + input_lsb[msg.control-32]) / 16384.0 * MAX_POWER
+					set_requests.append('commandSetSystemPowerRequest("%s", %f)' % (systems[system_id], send_to_game_power[system_id]))
 				else:
-					set_requests.append('commandSetSystemCoolantRequest("%s", %f)' % (systems[system_id], (msg.value * 128 + input_lsb[msg.control-32]) / 16384.0 * MAX_COOLANT))
+					send_to_game_coolant[system_id] = (msg.value * 128 + input_lsb[msg.control-32]) / 16384.0 * MAX_COOLANT
+					send_to_game_coolant = limit(send_to_game_coolant, MAX_COOLANT)
+					for system_id2 in range(len(systems)):
+						set_requests.append('commandSetSystemCoolantRequest("%s", %f)' % (systems[system_id2], send_to_game_coolant[system_id2]))
