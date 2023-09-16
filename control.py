@@ -53,9 +53,9 @@ midi_in = mido.open_input('Faderboard MIDI 1')
 
 input_lsb = [0] * 32
 
-systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "jumpdrive", "frontshield", "rearshield"]
-send_to_game_power = [MAX_POWER/len(s) for s in systems]
-send_to_game_coolant = [MAX_COOLANT/len(s) for s in systems]
+systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "warp", "frontshield", "rearshield"]
+send_to_game_power = [MAX_POWER/len(systems) if s is not None else 0 for s in systems]
+send_to_game_coolant = [MAX_COOLANT/len(systems) if s is not None else 0 for s in systems]
 
 def limit(values, maxval):
 	total = sum(values)
@@ -69,8 +69,11 @@ while True:
 	set_requests = []
 	MAX_COOLANT = result[2*len(systems)]
 
-	power_normalized = [p / MAX_POWER for p in result[0:len(systems)]]
-	coolant_normalized = [c / MAX_COOLANT for c in result[len(systems):2*len(systems)]]
+	COOLANT_DIV = max(MAX_COOLANT, 1)
+	POWER_DIV = max(MAX_POWER, 1)
+
+	power_normalized = [p / POWER_DIV for p in result[0:len(systems)]]
+	coolant_normalized = [c / COOLANT_DIV for c in result[len(systems):2*len(systems)]]
 
 	print(power_normalized)
 	print(coolant_normalized)
@@ -100,10 +103,10 @@ while True:
 				system_id = int(fader_id / 2)
 
 				if fader_id % 2 == 0: # power
-					send_to_game_power[system_id] = (msg.value * 128 + input_lsb[msg.control-32]) / 16384.0 * MAX_POWER
+					send_to_game_power[system_id] = min( (msg.value * 128 + input_lsb[msg.control-32]) / 16384.0 * POWER_DIV, MAX_POWER )
 					set_requests.append('commandSetSystemPowerRequest("%s", %f)' % (systems[system_id], send_to_game_power[system_id]))
 				else:
-					send_to_game_coolant[system_id] = (msg.value * 128 + input_lsb[msg.control-32]) / 16384.0 * MAX_COOLANT
+					send_to_game_coolant[system_id] = min( (msg.value * 128 + input_lsb[msg.control-32]) / 16384.0 * COOLANT_DIV, MAX_COOLANT )
 					send_to_game_coolant = limit(send_to_game_coolant, MAX_COOLANT)
 					for system_id2 in range(len(systems)):
 						set_requests.append('commandSetSystemCoolantRequest("%s", %f)' % (systems[system_id2], send_to_game_coolant[system_id2]))
