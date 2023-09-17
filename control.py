@@ -1,8 +1,54 @@
+import matplotlib.image as i
+import math
+import time
+import numpy as np
+
 import json
 import requests
 import sys
 
 import mido
+
+def read_img(filename):
+	img = i.imread(filename)
+
+	if img.shape[1] != 128 or img.shape[0] != 64:
+		print("Error: image must be 128x64")
+		exit(1)
+
+	img = img.transpose()[0].transpose() > 0.5 # extract red channel
+
+	return img
+
+
+def img2sysex(img, number):
+	img = img.copy()
+	img = np.flip(img, axis = [0,1])
+	sysex = bytearray([0xF0, 0x00, 0x13, 0x37, number])
+	height = img.shape[0]
+
+	for byte in range(int(math.ceil(128*64/7))):
+		result = 0
+		for bit in range(7):
+			bit_total = 7*byte + bit
+
+			y_small = bit_total % 8
+			x = (bit_total // 8) % 128
+			y_big = bit_total // 8 // 128
+			y = y_big * 8 + y_small
+
+			if y >= height: y = height - 1
+
+			if img[y][x]:
+				result = result | (1 << bit)
+		sysex.append(result)
+
+	sysex.append(0xF7)
+
+	return sysex
+
+
+
 
 SERVER="http://localhost:8080"
 
@@ -57,26 +103,87 @@ systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "wa
 send_to_game_power = [MAX_POWER/len(systems) if s is not None else 0 for s in systems]
 send_to_game_coolant = [MAX_COOLANT/len(systems) if s is not None else 0 for s in systems]
 
+imgs = [read_img("img/%s.png" % systems[i]) + read_img("img/overlay.png") for i in range(8)]
+
 def limit(values, maxval):
 	total = sum(values)
 	if total < maxval: total = maxval
 	return [v / total * maxval for v in values]
 
+
+display_update_i = 0
+display_update_delay = 1
+
+
+midi_output_name = [x for x in mido.get_output_names() if "Faderboard" in x][0]
+midi_out = mido.open_output(midi_output_name)
+
+def clamp(v, lo, hi):
+	if v < lo: return lo
+	if v > hi: return hi
+	return v
+
+heat_prev = [0]*8
+heat_rate = [0]*8
+
 while True:
+	blink = time.time() % 1.5 < (1.5 / 2)
+	blink_fast = time.time() % 0.6 < (0.6 / 2)
+
 	#systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "warp", "jumpdrive", "frontshield", "rearshield"]
 
-	result = query(['getSystemPower("%s")' % s for s in systems] + ['getSystemCoolant("%s")' % s for s in systems] + ['getMaxCoolant()'] + set_requests)
+	result = query(
+		['getSystemPower("%s")' % s for s in systems] +
+		['getSystemCoolant("%s")' % s for s in systems] +
+		['getSystemHeat("%s")' % s for s in systems] +
+		['getSystemHealth("%s")' % s for s in systems] +
+		['getMaxCoolant()'] +
+		set_requests
+	)
 	set_requests = []
-	MAX_COOLANT = result[2*len(systems)]
+	MAX_COOLANT = result[4*len(systems)]
 
 	COOLANT_DIV = max(MAX_COOLANT, 1)
 	POWER_DIV = max(MAX_POWER, 1)
 
 	power_normalized = [p / POWER_DIV for p in result[0:len(systems)]]
 	coolant_normalized = [c / COOLANT_DIV for c in result[len(systems):2*len(systems)]]
+	heat = result[2*len(systems) : 3*len(systems)]
+	health = result[3*len(systems) : 4*len(systems)]
+	heat_rate = [heat_prev[i]-heat[i] for i in range(8)]
+	print("RATE")
+	print (heat)
+	heat_prev = heat
 
 	print(power_normalized)
 	print(coolant_normalized)
+
+	display_update_i = (display_update_i + 1) % (8*display_update_delay)
+	if display_update_i % display_update_delay == 0:
+		display = display_update_i // display_update_delay
+		#print("updating display %d" % display)
+		image = imgs[display].copy()
+
+		hr_px = heat_rate[display]*100
+		hr_px = -int(clamp(hr_px, -12, 12))
+
+		image[12, 116:123] = 1
+
+		if hr_px > 0:
+			image[12:(12+hr_px+1), 118:121] = 1
+		elif hr_px < 0:
+			image[(12+hr_px-1):12, 118:121] = 1
+
+
+
+		image[int(64 -64 * heat[display]):64 , (128-32):128] = 1
+		#image[int(64 -64 * heat[display]):64 , 125:128] = 1
+		image[int(64 -64 * health[display]):64 , 0:3] = 1
+		if heat[display] > 0.9:
+			if blink_fast: image = 1-image
+		elif heat[display] > 0.75:
+			if blink: image = 1-image
+		midi_out.send(mido.Message.from_bytes(img2sysex(image, display)))
 
 	send_to_faders = interleave(power_normalized, coolant_normalized)
 
