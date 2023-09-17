@@ -9,6 +9,11 @@ import sys
 
 import mido
 
+dithers = [np.random.rand(64,128) for i in range(8)]
+
+def dither(img, number):
+	return img >= dithers[number]
+
 def read_img(filename):
 	img = i.imread(filename)
 
@@ -16,13 +21,15 @@ def read_img(filename):
 		print("Error: image must be 128x64")
 		exit(1)
 
-	img = img.transpose()[0].transpose() > 0.5 # extract red channel
+	# extract red channel and threshold black/white
+	img = (img.transpose()[0].transpose() > 0.5).astype(float)
 
 	return img
 
 
+# img: np.ndarray of type float with size 64x128
 def img2sysex(img, number):
-	img = img.copy()
+	img = dither(img, number)
 	img = np.flip(img, axis = [0,1])
 	sysex = bytearray([0xF0, 0x00, 0x13, 0x37, number])
 	height = img.shape[0]
@@ -112,7 +119,7 @@ def limit(values, maxval):
 
 
 display_update_i = 0
-display_update_delay = 1
+display_update_delay = 2
 
 
 midi_output_name = [x for x in mido.get_output_names() if "Faderboard" in x][0]
@@ -126,9 +133,12 @@ def clamp(v, lo, hi):
 heat_prev = [0]*8
 heat_rate = [0]*8
 
+frame = 0
 while True:
-	blink = time.time() % 1.5 < (1.5 / 2)
-	blink_fast = time.time() % 0.6 < (0.6 / 2)
+	print (frame)
+	frame += 1
+	blink = (frame//16) % 3 < 1
+	blink_fast = (frame//16) % 2 < 1
 
 	#systems = ["reactor", "beamweapons", "missilesystem", "maneuver", "impulse", "warp", "jumpdrive", "frontshield", "rearshield"]
 
@@ -164,6 +174,9 @@ while True:
 		#print("updating display %d" % display)
 		image = imgs[display].copy()
 
+		damage = clamp(1 - health[display], 0, 1)
+		image[0:64, 32:96] -= 0.8 * (damage**0.5)
+
 		hr_px = heat_rate[display]*100
 		hr_px = -int(clamp(hr_px, -12, 12))
 
@@ -176,7 +189,7 @@ while True:
 
 
 
-		image[int(64 -64 * heat[display]):64 , (128-32):128] = 1
+		image[int(64 -64 * heat[display]):64 , (128-32):128] = 1 - image[int(64 -64 * heat[display]):64 , (128-32):128]
 		#image[int(64 -64 * heat[display]):64 , 125:128] = 1
 		image[int(64 -64 * health[display]):64 , 0:3] = 1
 		if heat[display] > 0.9:
