@@ -68,7 +68,13 @@ def query(queries):
 
 	url = SERVER+"/get.lua?" + "".join(["&result%d=%s" % (i, q) for (i, q) in enumerate(queries)])
 	#print(url)
-	r = requests.get(url)
+	try:
+		r = requests.get(url)
+	except:
+		print("wtf, server request failed")
+		print("url: %s" % url)
+		raise ConnectionError("querying failed")
+
 	if r.status_code < 200 or r.status_code >= 300:
 		raise ConnectionError("querying failed %i" %r.status_code)
 	
