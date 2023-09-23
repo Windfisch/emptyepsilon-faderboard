@@ -214,6 +214,8 @@ while True:
 			msb = int(raw/128)
 			midi_out.send(mido.Message('control_change', channel=0, control=i+1+32, value=lsb, time=0))
 			midi_out.send(mido.Message('control_change', channel=0, control=i+1, value=msb, time=0))
+
+	set_requests_dict = {}
 	
 	while True:
 		msg = midi_in.poll()
@@ -229,9 +231,11 @@ while True:
 
 				if fader_id % 2 == 0: # power
 					send_to_game_power[system_id] = min( (msg.value * 128 + input_lsb[msg.control-32]) / 16384.0 * POWER_DIV, MAX_POWER )
-					set_requests.append('commandSetSystemPowerRequest("%s", %f)' % (systems[system_id], send_to_game_power[system_id]))
+					set_requests_dict["power_%s"%system_id] = 'commandSetSystemPowerRequest("%s", %f)' % (systems[system_id], send_to_game_power[system_id])
 				else:
 					send_to_game_coolant[system_id] = min( (msg.value * 128 + input_lsb[msg.control-32]) / 16384.0 * COOLANT_DIV, MAX_COOLANT )
 					send_to_game_coolant = limit(send_to_game_coolant, MAX_COOLANT)
 					for system_id2 in range(len(systems)):
-						set_requests.append('commandSetSystemCoolantRequest("%s", %f)' % (systems[system_id2], send_to_game_coolant[system_id2]))
+						set_requests_dict["coolant_%s"%system_id2] = 'commandSetSystemCoolantRequest("%s", %f)' % (systems[system_id2], send_to_game_coolant[system_id2])
+	
+	set_requests = list(set_requests_dict.values())
