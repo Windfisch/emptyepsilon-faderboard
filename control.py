@@ -130,9 +130,6 @@ def clamp(v, lo, hi):
 	if v > hi: return hi
 	return v
 
-heat_prev = [0]*8
-heat_rate = [0]*8
-
 frame = 0
 while True:
 	print (frame)
@@ -146,12 +143,13 @@ while True:
 		['getSystemPower("%s")' % s for s in systems] +
 		['getSystemCoolant("%s")' % s for s in systems] +
 		['getSystemHeat("%s")' % s for s in systems] +
+		['getSystemHeatingDelta("%s")' % s for s in systems] +
 		['getSystemHealth("%s")' % s for s in systems] +
 		['getMaxCoolant()'] +
 		set_requests
 	)
 	set_requests = []
-	MAX_COOLANT = result[4*len(systems)]
+	MAX_COOLANT = result[5*len(systems)]
 
 	COOLANT_DIV = max(MAX_COOLANT, 1)
 	POWER_DIV = max(MAX_POWER, 1)
@@ -159,11 +157,10 @@ while True:
 	power_normalized = [p / POWER_DIV for p in result[0:len(systems)]]
 	coolant_normalized = [c / COOLANT_DIV for c in result[len(systems):2*len(systems)]]
 	heat = result[2*len(systems) : 3*len(systems)]
-	health = result[3*len(systems) : 4*len(systems)]
-	heat_rate = [heat_prev[i]-heat[i] for i in range(8)]
-	print("RATE")
-	print (heat)
-	heat_prev = heat
+	heat_rate = result[3*len(systems) : 4*len(systems)]
+	health = result[4*len(systems) : 5*len(systems)]
+
+	heat_rate = [hr if h > 0 else 0 for (h, hr) in zip(heat, heat_rate)]
 
 	print(power_normalized)
 	print(coolant_normalized)
@@ -177,15 +174,17 @@ while True:
 		damage = clamp(1 - health[display], 0, 1)
 		image[0:64, 32:96] -= 0.8 * (damage**0.5)
 
-		hr_px = heat_rate[display]*100
-		hr_px = -int(clamp(hr_px, -12, 12))
-
-		image[12, 116:123] = 1
-
-		if hr_px > 0:
-			image[12:(12+hr_px+1), 118:121] = 1
-		elif hr_px < 0:
-			image[(12+hr_px-1):12, 118:121] = 1
+		arrow_height = 13
+		for i in range(arrow_height):
+			h = int(heat_rate[display] * arrow_height * 3)
+			if h >= 1: h += 1
+			if h <= 1: h -= 1
+			h = clamp(h, -arrow_height, arrow_height)
+			if i >= abs(h): break
+			if h > 1:
+				image[16-i, (112-h+i):(112+h-i)] = 1
+			elif h < -1:
+				image[16+i, (112-abs(h)+i):(112+abs(h)-i)] = 1
 
 
 
